@@ -72,6 +72,7 @@ import ruffus
 import pandas
 import pysam
 
+import CGATCore.Experiment as E
 from CGATCore import IOTools as IOTools
 from CGATCore import Pipeline as P
 
@@ -86,25 +87,40 @@ def index_vector_sequence(infile, outfile):
 
 
 def build_motif_bed(infile, outfile):
-    
+
     with pysam.FastxFile(infile) as inf:
         vector = next(inf)
 
     contig = vector.name
     positions = [x for x, c in enumerate(vector.sequence) if c == "N"]
 
-    with IOTools.open_file(outfile, "w") as outf:
+    with IOTools.open_file(P.snip(outfile, ".gz"), "w") as outf:
         for pos in positions:
             outf.write("{}\t{}\t{}\n".format(contig, pos, pos + 1))
+    pysam.tabix_index(P.snip(outfile, ".gz"), preset="bed")
 
 
+def build_motif_fasta(infile, outfile):
+
+    with pysam.FastxFile(infile) as inf:
+        vector_sequence = next(inf).sequence
+
+    start = vector_sequence.find("N")
+    end = vector_sequence.rfind("N") + 1
+
+    with IOTools.open_file(outfile, "w") as outf:
+        outf.write(">barcode\n{}\n".format(vector_sequence[start:end]))
+
+        
 def filter_read_data(infiles, outfiles):
     """filter vector sequences from read data.
     """
 
-    fastq1, fastq2 = sorted([infiles[0][0] for x in infiles])
+    fastq1, fastq2 = sorted([os.path.abspath(x[0]) for x in infiles])
     vector_fasta = infiles[0][1]
     outprefix = IOTools.snip(outfiles[0], ".matched.fastq.1.gz")
+
+    filter_options = P.get_params().get("kmer_filtering", {})
     
     statement = (
         "cgat fastqs2fastqs "
@@ -112,9 +128,13 @@ def filter_read_data(infiles, outfiles):
         "--method=filter-by-sequence "
         "--force-output "
         "--output-filename-pattern={outprefix}.%%s "
+        "--filtering-kmer-size={filtering_kmer_size} "
+        "--filtering-min-kmer-matches={filtering_min_kmer_matches} "
         "{fastq1} "
         "{fastq2} "
         "> {outprefix}.log ".format(
+            filtering_kmer_size=filter_options.get("kmer_size", 10),
+            filtering_min_kmer_matches=filter_options.get("min_kmer_matches", 10),
             **locals()))
 
     return P.run(statement)
@@ -135,11 +155,15 @@ def summarize_filtering(infiles, outfile):
 
 def align_vector_sequences(infiles, outfile):
 
-    fastq = " ".join(sorted([x for x in infiles[0][0] if ".matched" in x]))
+    fastq_files = sorted([x for x in infiles[0][0] if ".matched" in x])
     vector_fasta = infiles[0][1]
-
+    read_group = P.snip(os.path.basename(fastq_files[0]), ".fastq.1.gz")
+    # high clipping penalties, low gap penalties
+    # high match score to encourage positions mapping to
+    # the non-barcode sequences
     statement = (
-        "bwa mem -k14 -W20 -r10 -A1 -B1 -O6 -E1 -L0 -U0 "
+        "bwa mem -k14 -W20 -r10 -A1 -B1 -O2 -E1 -L100 -U10 "
+        "-R '@RG\\tID:{read_group}\\tSM:{read_group}' "
         "{vector_fasta} {fastq} "
         "2> {outfile}.bwa.err "
         "| samtools sort - "
@@ -148,19 +172,35 @@ def align_vector_sequences(infiles, outfile):
         "2> {outfile}.view.err "
         "> {outfile} && "
         "samtools index {outfile}".format(
+            fastq=" ".join(fastq_files),
             **locals()))
-        
     return P.run(statement)
 
 
 def merge_lanes(infiles, outfile):
-    
     infiles = " ".join(infiles)
     statement = (
-        "samtools merge {outfile} {infiles} "
+        "samtools merge -f {outfile} {infiles} "
         "2> {outfile}.merge.err && "
         "samtools index {outfile} ".format(**locals()))
     return P.run(statement)
+
+
+def remove_duplicates(infile, outfile):
+
+    job_memory = "4G"
+    picard_opts = '-Xmx{} -XX:+UseParNewGC -XX:+UseConcMarkSweepGC'.format(
+        job_memory)
+    
+    statement = (
+        "picard {picard_opts} "
+        "MarkDuplicates "
+        "INPUT={infile} "
+        "OUTPUT={outfile} "
+        "METRICS_FILE={outfile}.metrics "
+        ">& {outfile}.log && "
+        "samtools index {outfile}".format(**locals()))
+    return P.run(statement, job_memory="unlimited")
 
 
 def compute_samtools_bamstats(infile, outfile):
@@ -213,51 +253,56 @@ def summarize_cgat_bamstats(infiles, outfile):
     return P.run(statement)
 
 
-def extract_clone_codes(infiles, outfile):
+def extract_clone_codes_pileup(infiles, outfile):
 
     bamfile, fafile, bedfile = infiles
 
-    # -A: count orphans (do not discard anomolous read pairs)
-    # -a: output zero depth positions
     statement = (
-        "echo -e \"contig\\tpos\\tref\\tdepth\\tbases\\tquality\" > {outfile}.tmp && "
-        "samtools mpileup -a -A "
-        "--fasta-ref {fafile} "
-        "--positions {bedfile} "
+        "cgat bam-pileup2tsv "
+        "--input-bed={bedfile} "
+        "--reference-fasta={fafile} "
+        "--min-base-quality=0 "
+        "--method=barcode "
+        "--log={outfile}.pileup.log "
         "{bamfile} "
-        ">> {outfile}.tmp ".format(**locals()))
-    P.run(statement)
+        "> {outfile}.pileup ".format(**locals()))
+    P.run(statement, job_memory="8G")
 
-    df = pandas.read_csv(outfile + ".tmp", sep="\t")
-    os.unlink(outfile + ".tmp")
-    
-    bases = ["A", "C", "G", "T"]
-    for b in bases:
-        df[b] = df.bases.str.upper().str.count(b)
-    df["consensus"] = df[bases].idxmax(axis=1)
-    df["consensus_counts"] = df.lookup(df.index, df.consensus)
-    df["consensus_support"] = df.consensus_counts / df.depth
-    df["offconsensus_counts"] = df.depth - df.consensus_counts
-    df.loc[df.consensus_counts == 0, "consensus"] = "N"
+    full_df = pandas.read_csv(outfile + ".pileup", sep="\t")
 
-    with IOTools.open_file(outfile + ".pileup", "w") as outf:
-        df.to_csv(outf, sep="\t", index=False)
-    
     with IOTools.open_file(outfile, "w") as outf:
-        headers = df.consensus_support.describe().index
-        outf.write("\t".join(map(str, ["barcode"] +
+        headers = full_df.consensus_support.describe().index
+        full_df["consensus"] = full_df.consensus.fillna("N")
+        consensus_sequence = "".join(full_df.consensus)
+
+        eval_df = full_df.copy()
+        median_consensus_depth = eval_df.consensus_counts.median()
+
+        # modules to recover partial bar-codes
+        # 1.: bases missing from the bar-code if otherwise median depth is high
+        # => ignore these bases for depth and other QC metrics
+        if median_consensus_depth > 2:
+            deleted_barcode_bases = full_df[(full_df.consensus == "N") & (full_df.depth == 0)]
+            eval_df = eval_df[~eval_df.pos.isin(deleted_barcode_bases.pos)]
+            deleted_barcode_bases = deleted_barcode_bases.index
+        else:
+            deleted_barcode_bases = ""
+            
+        outf.write("\t".join(map(str, ["barcode", "ndeleted_barcode_bases", "deleted_barcode_bases"] +
                                  ["support_{}".format(x) for x in headers] +
                                  ["counts_{}".format(x) for x in headers] +
                                  ["offcounts_{}".format(x) for x in headers])) + "\n")
+        outf.write("\t".join(map(str, [
+            consensus_sequence,
+            len(deleted_barcode_bases),
+            ",".join(map(str, deleted_barcode_bases))] +
+                                 eval_df.consensus_support.describe().tolist() +
+                                 eval_df.consensus_counts.describe().tolist() +
+                                 eval_df.offconsensus_counts.describe().tolist())) + "\n")
 
-        outf.write("\t".join(map(str, ["".join(df.consensus)] +
-                                 df.consensus_support.describe().tolist() +
-                                 df.consensus_counts.describe().tolist() +
-                                 df.offconsensus_counts.describe().tolist())) + "\n")
 
+def summarize_clone_codes_pileup(infiles, outfile):
 
-def summarize_clone_codes(infiles, outfile):
-            
     infiles = " ".join(infiles)
     statement = (
         "cgat combine-tables "
@@ -269,7 +314,72 @@ def summarize_clone_codes(infiles, outfile):
     return P.run(statement)
 
 
-# todo: depth profiles
+def extract_clone_codes_mali(infiles, outfile):
+
+    bamfile, fafile, bedfile, vectorfile = infiles
+
+    statement = (
+        "cgat bam2fasta "
+        "--input-bed-file={bedfile} "
+        "--reference-fasta={fafile} "
+        "--merge-intervals "
+        "--output-filename-pattern={outfile}.%%s "
+        "--barcode-fasta={vectorfile} "
+        "--log={outfile}.log "
+        "{bamfile} "
+        "2> {outfile}.err "
+        "> {outfile}".format(**locals()))
+    P.run(statement)
+
+
+def summarize_clone_codes_mali(infiles, outfile):
+
+    infiles = " ".join(infiles)
+    statement = (
+        "cgat combine-tables "
+        "--log={outfile}.log "
+        "--cat sample "
+        "--regex-filename=\".dir/([^/.]+)\" "
+        "{infiles} "
+        "> {outfile}".format(**locals()))
+    return P.run(statement)
+
+
+def summarize_all(infiles, outfile):
+    """merge all summary tables into a single table."""
+    fn_clonecodes, fn_bamstats, fn_filtering = infiles
+    df_clonecodes = pandas.read_csv(fn_clonecodes, sep="\t", na_values="na")
+    df_bamstats = pandas.read_csv(fn_bamstats, sep="\t")
+    df_filterstats = pandas.read_csv(fn_filtering, sep="\t")
+
+    # aggregate the per-lane filter-stats and append to filter stats
+    df_filterstats["lane"] = df_filterstats["sample"].str.extract("(lane\d+)", expand=False)
+    extra = df_filterstats.loc[~df_filterstats["lane"].isnull(), :].copy()
+    extra["sample"] = extra["sample"].str.extract("(.*)-lane\d+", expand=False)
+    extra = extra.groupby(["sample"]).sum().reset_index()
+    df_filterstats = pandas.concat([df_filterstats, extra], axis=0)
+    E.info("adding lane-combined metrics to filter_stats: extra={}, filterstats={}".format(
+        len(extra), len(df_filterstats)))
+
+    df_filterstats["percent_matched"] = 100.0 * df_filterstats["matched"] / df_filterstats["input"]
+
+    # normalize bamstats df
+    df_bamstats = pandas.pivot_table(df_bamstats, index="sample", columns="category", values="counts").reset_index()
+
+    # sanitize clone codes df
+    df_clonecodes["barcode"] = df_clonecodes.barcode.fillna("NNNNNNNNN")
+    df_clonecodes["counts_min"] = df_clonecodes.counts_min.fillna(0)
+    df_clonecodes["support_min"] = df_clonecodes.support_min.fillna(0)
+    
+    # merge
+    df_merged = df_clonecodes.merge(df_bamstats, left_on="sample", right_on="sample")\
+                             .merge(df_filterstats, left_on="sample", right_on="sample")
+    E.info("number of rows bamstats: {}".format(len(df_bamstats)))
+    E.info("number of rows clonecodes: {}".format(len(df_clonecodes)))
+    E.info("number of rows filterstats: {}".format(len(df_filterstats)))
+    E.info("number of rows merged: {}".format(len(df_merged)))
+    df_merged.to_csv(outfile, sep="\t", index=False)
+
 
 def main(argv=None):
     if argv is None:
@@ -318,8 +428,13 @@ def main(argv=None):
         task_func=build_motif_bed,
         input=task_index_vector_sequence,
         filter=ruffus.suffix(".fa"),
-        output=".bed")
+        output=".bed.gz")
 
+    task_build_motif_fasta = pipeline.merge(
+        task_func=build_motif_fasta,
+        input=task_index_vector_sequence,
+        output="vector.dir/barcode.fa")
+                   
     task_filter_read_data = pipeline.collate(
         task_func=filter_read_data,
         input=options.input_fastq_glob,
@@ -352,9 +467,16 @@ def main(argv=None):
         output="merged_bam.dir/{SAMPLE[0]}.bam",
         ).mkdir("merged_bam.dir")
 
+    task_remove_duplicates = pipeline.transform(
+        task_func=remove_duplicates,
+        input=[task_align_vector_sequences, task_merge_lanes],
+        filter=ruffus.formatter(r".dir/(?P<SAMPLE>[^/]+).bam"),
+        output="deduplicated.dir/{SAMPLE[0]}.bam",
+        ).mkdir("deduplicated.dir")
+
     task_compute_cgat_bamstats = pipeline.transform(
         task_func=compute_cgat_bamstats,
-        input=[task_align_vector_sequences, task_merge_lanes],
+        input=task_remove_duplicates,
         filter=ruffus.formatter(r".dir/(?P<SAMPLE>[^/]+).bam"),
         output="cgat_bamstats.dir/{SAMPLE[0]}.tsv",
         ).mkdir("cgat_bamstats.dir")
@@ -366,14 +488,14 @@ def main(argv=None):
     
     task_compute_samtools_bamstats = pipeline.transform(
         task_func=compute_samtools_bamstats,
-        input=[task_align_vector_sequences, task_merge_lanes],
+        input=task_remove_duplicates,
         filter=ruffus.formatter(r".dir/(?P<SAMPLE>[^/]+).bam"),
         output="samtools_bamstats.dir/{SAMPLE[0]}.tsv",
         ).mkdir("samtools_bamstats.dir")
 
     task_compute_samtools_depth = pipeline.transform(
         task_func=compute_samtools_depth,
-        input=[task_align_vector_sequences, task_merge_lanes],
+        input=task_remove_duplicates,
         filter=ruffus.formatter(r".dir/(?P<SAMPLE>[^/]+).bam"),
         output="samtools_depth.dir/{SAMPLE[0]}.tsv",
         ).mkdir("samtools_depth.dir")
@@ -383,18 +505,38 @@ def main(argv=None):
         input=task_compute_samtools_depth,
         output="samtools_depth.tsv")
     
-    task_extract_clone_codes = pipeline.transform(
-        task_func=extract_clone_codes,
-        input=[task_align_vector_sequences, task_merge_lanes],
-        filter=ruffus.regex(r".dir/([^/]+).bam"),
+    task_extract_clone_codes_pileup = pipeline.transform(
+        task_func=extract_clone_codes_pileup,
+        input=task_remove_duplicates,
+        filter=ruffus.regex(".dir/([^/]+).bam"),
         output=r"clone_codes.dir/\1.tsv",
         add_inputs=(task_index_vector_sequence, task_build_motif_bed),
         ).mkdir("clone_codes.dir")
 
-    task_summarize_clone_codes = pipeline.merge(
-        task_func=summarize_clone_codes,
-        input=task_extract_clone_codes,
-        output="clone_codes.tsv")
+    task_extract_clone_codes_mali = pipeline.transform(
+        task_func=extract_clone_codes_mali,
+        input=task_remove_duplicates,
+        filter=ruffus.regex(".dir/([^/]+).bam"),
+        output=r"mali_clone_codes.dir/\1.tsv",
+        add_inputs=(task_index_vector_sequence, task_build_motif_bed, task_build_motif_fasta),
+        ).mkdir("mali_clone_codes.dir")
+
+    task_summarize_clone_codes_pileup = pipeline.merge(
+        task_func=summarize_clone_codes_pileup,
+        input=task_extract_clone_codes_pileup,
+        output="clone_codes_pileup.tsv")
+
+    task_summarize_clone_codes_mali = pipeline.merge(
+        task_func=summarize_clone_codes_mali,
+        input=task_extract_clone_codes_mali,
+        output="clone_codes_mali.tsv")
+
+    task_summarize_all = pipeline.merge(
+        task_func=summarize_all,
+        input=[task_summarize_clone_codes_pileup,
+               task_summarize_cgat_bamstats,
+               task_summarize_filtering],
+        output="summary.tsv")
 
     # primary targets
     pipeline.merge(
@@ -405,7 +547,10 @@ def main(argv=None):
             task_summarize_cgat_bamstats,
             task_compute_samtools_bamstats,
             task_summarize_samtools_depth,
-            task_summarize_clone_codes
+            task_summarize_clone_codes_pileup,
+            task_extract_clone_codes_mali,
+#            task_summarize_clone_codes_mali,
+            task_summarize_all,
         ],
         output="all")
 
