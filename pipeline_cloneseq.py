@@ -72,9 +72,9 @@ import ruffus
 import pandas
 import pysam
 
-import CGATCore.Experiment as E
-from CGATCore import IOTools as IOTools
-from CGATCore import Pipeline as P
+import cgatcore.experiment as E
+from cgatcore import iotools as IOTools
+from cgatcore import pipeline as P
 
 
 def index_vector_sequence(infile, outfile):
