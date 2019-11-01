@@ -78,6 +78,7 @@ from cgatcore import pipeline as P
 
 
 def index_vector_sequence(infile, outfile):
+    """Convert vector sequene (viral genome + inserts) to BWA file format."""
     statement = (
         "cp {infile} {outfile} && "
         "samtools faidx {outfile} && "
@@ -87,7 +88,7 @@ def index_vector_sequence(infile, outfile):
 
 
 def build_motif_bed(infile, outfile):
-
+    """Create a BED file with the positions of the variable bases (i.e. 'N') in the barcode."""
     with pysam.FastxFile(infile) as inf:
         vector = next(inf)
 
@@ -101,7 +102,7 @@ def build_motif_bed(infile, outfile):
 
 
 def build_motif_fasta(infile, outfile):
-
+    """Extract the barcode sequence."""
     with pysam.FastxFile(infile) as inf:
         vector_sequence = next(inf).sequence
 
@@ -111,17 +112,16 @@ def build_motif_fasta(infile, outfile):
     with IOTools.open_file(outfile, "w") as outf:
         outf.write(">barcode\n{}\n".format(vector_sequence[start:end]))
 
-        
+
 def filter_read_data(infiles, outfiles):
-    """filter vector sequences from read data.
-    """
+    """Filter reads for occurrence of the barcode motif."""
 
     fastq1, fastq2 = sorted([os.path.abspath(x[0]) for x in infiles])
     vector_fasta = infiles[0][1]
     outprefix = IOTools.snip(outfiles[0], ".matched.fastq.1.gz")
 
     filter_options = P.get_params().get("kmer_filtering", {})
-    
+
     statement = (
         "cgat fastqs2fastqs "
         "--input-filename-fasta={vector_fasta} "
@@ -154,7 +154,7 @@ def summarize_filtering(infiles, outfile):
 
 
 def align_vector_sequences(infiles, outfile):
-
+    """Align reads containing the barcode."""
     fastq_files = sorted([x for x in infiles[0][0] if ".matched" in x])
     vector_fasta = infiles[0][1]
     read_group = P.snip(os.path.basename(fastq_files[0]), ".fastq.1.gz")
@@ -254,7 +254,7 @@ def summarize_cgat_bamstats(infiles, outfile):
 
 
 def extract_clone_codes_pileup(infiles, outfile):
-
+    """Determine the exact barcode sequence present in each cell."""
     bamfile, fafile, bedfile = infiles
 
     statement = (
@@ -287,7 +287,7 @@ def extract_clone_codes_pileup(infiles, outfile):
             deleted_barcode_bases = deleted_barcode_bases.index
         else:
             deleted_barcode_bases = ""
-            
+
         outf.write("\t".join(map(str, ["barcode", "ndeleted_barcode_bases", "deleted_barcode_bases"] +
                                  ["support_{}".format(x) for x in headers] +
                                  ["counts_{}".format(x) for x in headers] +
@@ -315,7 +315,10 @@ def summarize_clone_codes_pileup(infiles, outfile):
 
 
 def extract_clone_codes_mali(infiles, outfile):
-
+    """Multi-align regions of the reads containing the barcode (+ an
+    anchor, as there may be deletions or mutations within the barcode
+    sequence).
+    """
     bamfile, fafile, bedfile, vectorfile = infiles
 
     statement = (
@@ -370,7 +373,7 @@ def summarize_all(infiles, outfile):
     df_clonecodes["barcode"] = df_clonecodes.barcode.fillna("NNNNNNNNN")
     df_clonecodes["counts_min"] = df_clonecodes.counts_min.fillna(0)
     df_clonecodes["support_min"] = df_clonecodes.support_min.fillna(0)
-    
+
     # merge
     df_merged = df_clonecodes.merge(df_bamstats, left_on="sample", right_on="sample")\
                              .merge(df_filterstats, left_on="sample", right_on="sample")
@@ -434,7 +437,7 @@ def main(argv=None):
         task_func=build_motif_fasta,
         input=task_index_vector_sequence,
         output="vector.dir/barcode.fa")
-                   
+
     task_filter_read_data = pipeline.collate(
         task_func=filter_read_data,
         input=options.input_fastq_glob,
@@ -450,7 +453,7 @@ def main(argv=None):
         task_func=summarize_filtering,
         input=task_filter_read_data,
         output="filtering_summary.tsv")
-    
+
     task_align_vector_sequences = pipeline.collate(
         task_func=align_vector_sequences,
         input=task_filter_read_data,
@@ -485,7 +488,7 @@ def main(argv=None):
         task_func=summarize_cgat_bamstats,
         input=task_compute_cgat_bamstats,
         output="cgat_bamstats.tsv")
-    
+
     task_compute_samtools_bamstats = pipeline.transform(
         task_func=compute_samtools_bamstats,
         input=task_remove_duplicates,
@@ -504,7 +507,7 @@ def main(argv=None):
         task_func=summarize_samtools_depth,
         input=task_compute_samtools_depth,
         output="samtools_depth.tsv")
-    
+
     task_extract_clone_codes_pileup = pipeline.transform(
         task_func=extract_clone_codes_pileup,
         input=task_remove_duplicates,
