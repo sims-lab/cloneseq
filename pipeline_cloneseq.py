@@ -189,9 +189,9 @@ def merge_lanes(infiles, outfile):
 def remove_duplicates(infile, outfile):
 
     job_memory = "4G"
-    picard_opts = '-Xmx{} -XX:+UseParNewGC -XX:+UseConcMarkSweepGC'.format(
-        job_memory)
-    
+    # picard_opts = '-Xmx{} -XX:+UseParNewGC -XX:+UseConcMarkSweepGC'.format(job_memory)
+    picard_opts = '-Xmx{} -XX:+UseConcMarkSweepGC'.format(job_memory)
+
     statement = (
         "picard {picard_opts} "
         "MarkDuplicates "
@@ -388,44 +388,47 @@ def main(argv=None):
     if argv is None:
         argv = sys.argv
 
-    def add_input(parser):
-        parser.add_option(
-            "--filename-vector-fasta",
-            dest="filename_vector_fasta",
-            default=None,
-            type="string",
-            help="filename of vector sequence in fasta format "
-            "[default=%default].")
+#    def add_input(parser):
+#        parser.add_option(
+#            "--filename-vector-fasta",
+#            dest="filename_vector_fasta",
+#            default=None,
+#            type="string",
+#            help="filename of vector sequence in fasta format "
+#            "[default=%default].")
+#
+#        parser.add_option(
+#            "--input-fastq-glob",
+#            dest="input_fastq_glob",
+#            default=None,
+#            type="string",
+#            help="glob expression for paired-end read data in fastq format "
+#            "[default=%default].")
+#
+#    options, args = P.parse_commandline(argv,
+#                                        config_file="pipeline.yml",
+#                                        callback=add_input)
+    options, args = P.parse_commandline(argv, config_file="pipeline.yml")
 
-        parser.add_option(
-            "--input-fastq-glob",
-            dest="input_fastq_glob",
-            default=None,
-            type="string",
-            help="glob expression for paired-end read data in fastq format "
-            "[default=%default].")
+#    if options.filename_vector_fasta is None:
+#        raise ValueError("please specify --vector-fasta")
+#
+#    if options.input_fastq_glob is None:
+#        raise ValueError("please specify --input-fastq-glob")
 
-    options, args = P.parse_commandline(argv,
-                                        config_file="pipeline.yml",
-                                        callback=add_input)
-
-    if options.filename_vector_fasta is None:
-        raise ValueError("please specify --vector-fasta")
-
-    if options.input_fastq_glob is None:
-        raise ValueError("please specify --input-fastq-glob")
-
-    if options.config_file:
-        P.get_parameters(options.config_file)
-    else:
-        sys.exit(P.main(options, args))
+#    if options.config_file:
+#        P.get_parameters(options.config_file)
+#    else:
+#        sys.exit(P.main(options, args))
+    P.get_parameters("pipeline.yml")
 
     pipeline = ruffus.Pipeline("cgatflow-cloneseq")
 
     task_index_vector_sequence = pipeline.merge(
         task_func=index_vector_sequence,
-        input=options.filename_vector_fasta,
-        output="vector.dir/vector.fa")
+#        input=options.filename_vector_fasta,
+        input=P.get_params().get("filename_vector_fasta"),
+        output="vector.dir/vector.fa").mkdir("vector.dir")
 
     task_build_motif_bed = pipeline.transform(
         task_func=build_motif_bed,
@@ -440,7 +443,8 @@ def main(argv=None):
 
     task_filter_read_data = pipeline.collate(
         task_func=filter_read_data,
-        input=options.input_fastq_glob,
+#        input=options.input_fastq_glob,
+        input=P.get_params().get("input_fastq_glob"),
         filter=ruffus.formatter(r"(?P<SAMPLE>[^/]+).fastq.[12].gz"),
         output=["fastq.dir/{SAMPLE[0]}.matched.fastq.1.gz",
                 "fastq.dir/{SAMPLE[0]}.matched.fastq.2.gz",
