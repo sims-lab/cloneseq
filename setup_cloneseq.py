@@ -3,12 +3,6 @@
 Automate the setup of cloneseq analysis.
 Creates the necessary directory structure,
 and links in the appropriate files into the data subdirectory.
-
-TODO:
-- use argparse or a configuration file to pass in
-    plate_name
-    path_to_email
-    path_to_data
 """
 
 import re
@@ -57,6 +51,11 @@ def setup_folders(project, pipeline, plate):
                 plate=plate_dir,
                 data=data_dir
     )
+
+
+def link_in_data(src_data_dir, dst_data_dir, mapping_info):
+    src_name_to_dst_name = remap_file_names(mapping_info)
+    create_symlinks(src_data_dir, dst_data_dir, src_name_to_dst_name)
 
 
 def remap_file_names(path_to_email:str, lane:str='lane1') -> dict:
@@ -211,17 +210,6 @@ def create_cloneseq_yml(plate_dir):
 
 if __name__ == '__main__':
 
-    # plate_name = 'human-Plate7'
-    # plate_name = 'human-Plate8'
-    # plate_name = 'human-Plate9'
-    # plate_name = 'human-Plate10'
-    # plate_name = 'mouse-Plate5'
-    # plate_name = 'mouse-Plate6'
-    # plate_name = 'mouse-Plate11'
-    # plate_name = 'mouse-Plate12'
-    # plate_name = 'mouse-Plate13'
-    # plate_name = 'mouse-Plate14'
-
     # plate_name = 'mouse-Plate15'
     # path_to_email = '/ifs/projects/proj093/backup/2019-07-15-plate15/email_plate_15.txt'
     # path_to_data = '/ifs/projects/proj093/backup/2019-07-15-plate15/190626_K00181_0151_AH7MTJBBXY/'
@@ -234,22 +222,28 @@ if __name__ == '__main__':
     # path_to_email = '/ifs/projects/proj093/backup/2019_09_19_plates_16_and_17/email_plate_17.txt'
     # path_to_data = '/ifs/projects/proj093/backup/2019_09_19_plates_16_and_17/190913_K00181_0175_BHF27LBBXY/'
 
-    plate_name = 'mouse-Plate18'
-    path_to_email = '/ifs/projects/proj093/backup/2019_09_19_plate_18/email_plate_18.txt'
-    path_to_data = '/ifs/projects/proj093/backup/2019_09_19_plate_18/190913_K00181_0175_BHF27LBBXY/'
+    # plate_name = 'mouse-Plate18'
+    # path_to_email = '/ifs/projects/proj093/backup/2019_09_19_plate_18/email_plate_18.txt'
+    # path_to_data = '/ifs/projects/proj093/backup/2019_09_19_plate_18/190913_K00181_0175_BHF27LBBXY/'
 
-    project_paths = setup_folders(
-        project='/ifs/projects/proj093/',
-        pipeline='cloneseq',
-        plate=plate_name,
-    )
+    data_info = pd.read_csv('/ifs/projects/proj093/analysis/data_info.csv')
+    for ii, dataset in data_info.iterrows():
+        if dataset['processed'] is not True:
 
-    src_name_to_dst_name = remap_file_names(path_to_email)
+            plate_name = dataset['plate_name']
+            path_to_data = dataset['path_to_data']
+            path_to_email = dataset['path_to_email']
 
-    # gather and link data sets
-    src_data_dir = pathlib.Path(path_to_data)
-    dst_data_dir = project_paths['data']
-    create_symlinks(src_data_dir, dst_data_dir, src_name_to_dst_name)
+            project_paths = setup_folders(
+                project='/ifs/projects/proj093/',
+                pipeline='cloneseq',
+                plate=plate_name,
+            )
 
-    # create pipeline.yml file
-    create_cloneseq_yml(project_paths['plate'])
+            # gather and link data sets
+            link_in_data(src_data_dir=pathlib.Path(path_to_data),
+                         dst_data_dir=project_paths['data'],
+                         mapping_info=path_to_email)
+
+            # create pipeline.yml file
+            create_cloneseq_yml(project_paths['plate'])
