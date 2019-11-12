@@ -61,7 +61,7 @@ def get_hash(file_path):
 
 
 def compare_directories(dir1, dir2,
-                        include='*', exclude=None,
+                        # include='*', exclude=None,
                         filter_paths_with=None,
                         compare_files_with=get_hash,
                         verbose=True):
@@ -71,8 +71,8 @@ def compare_directories(dir1, dir2,
     dir1 = _force_pathlib_path(dir1)
     dir2 = _force_pathlib_path(dir2)
 
-    paths1 = _get_paths(dir1, include, exclude)
-    paths2 = _get_paths(dir2, include, exclude)
+    paths1 = _get_paths(dir1, include='*', exclude=None)
+    paths2 = _get_paths(dir2, include='*', exclude=None)
 
     if filter_paths_with:
         paths1 = filter_paths_with(paths1)
