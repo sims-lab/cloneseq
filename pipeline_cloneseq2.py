@@ -333,7 +333,8 @@ def summarize_clone_codes_pileup(infiles, outfile):
     )
     return P.run(statement)
 
-
+# # NB: the multialignment branch seemed dead in Andreas' version of the pipeline.
+# # TODO: summarize_clone_codes_mali does not handle empty TSV files when concatenating tables
 # @follows(mkdir("mali_clone_codes.dir"))
 # @transform(
 #     input=remove_duplicates,
