@@ -285,8 +285,8 @@ def summarize_cgat_bamstats(infiles, outfile):
 @follows(mkdir("clone_codes.dir"))
 @transform(
     input=remove_duplicates,
-    filter=regex(".dir/([^/]+).bam"),
     output=r"clone_codes.dir/\1.tsv",
+    filter=regex("^.*/(.+?)\.bam$"),
     add_inputs=(index_vector_sequence, build_motif_bed),
 )
 def build_variable_bases_pileup(infiles, outfile):
@@ -299,9 +299,9 @@ def build_variable_bases_pileup(infiles, outfile):
         f"--reference-fasta={fafile} "
         f"--min-base-quality=0 "
         f"--method=barcode "
-        f"--log={outfile}.pileup.log "
+        f"--log={outfile}.log "
         f"{bamfile} "
-        f"> {outfile}.pileup "
+        f"> {outfile} "
     )
     return P.run(statement, job_memory="8G")
 
