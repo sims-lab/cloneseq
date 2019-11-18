@@ -52,11 +52,11 @@ def build_motif_bed(infile, outfile):
         vector = next(inf)
 
     contig = vector.name
-    positions = [x for x, c in enumerate(vector.sequence) if c == "N"]
+    positions = [ii for ii, char in enumerate(vector.sequence) if char == "N"]
 
     with IOTools.open_file(P.snip(outfile, ".gz"), "w") as outf:
-        for pos in positions:
-            outf.write("{}\t{}\t{}\n".format(contig, pos, pos + 1))
+        for ii in positions:
+            outf.write("{}\t{}\t{}\n".format(contig, ii, ii + 1))
     pysam.tabix_index(P.snip(outfile, ".gz"), preset="bed")
 
 
