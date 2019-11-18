@@ -435,7 +435,10 @@ def summarize_all(infiles, outfile):
     df_filterstats["percent_matched"] = 100.0 * df_filterstats["matched"] / df_filterstats["input"]
 
     # normalize bamstats df
-    df_bamstats = pandas.pivot_table(df_bamstats, index="sample", columns="category", values="counts").reset_index()
+    df_bamstats = pandas.pivot_table(df_bamstats,
+                                     index="sample",
+                                     columns="category",
+                                     values="counts").reset_index()
 
     # sanitize clone codes df
     df_clonecodes["barcode"] = df_clonecodes.barcode.fillna("NNNNNNNNN")
