@@ -6,6 +6,7 @@ scRNASeq2 pipeline to extract barcodes from sequencing data.
 
 import sys
 import os
+import os.path
 import pathlib
 import pandas
 import pysam
@@ -364,23 +365,6 @@ def summarize_extract_variable_bases_consensus(infiles, outfile):
     return P.run(statement)
 
 
-
-# @merge(
-#     input=extract_clone_codes_mali,
-#     output="clone_codes_mali.tsv"
-# )
-# def summarize_clone_codes_mali(infiles, outfile):
-#     infiles = " ".join(infiles)
-#     statement = (
-#         f"cgat combine-tables "
-#         f"--log={outfile}.log "
-#         f"--cat sample "
-#         f"--regex-filename=\".dir/([^/.]+)\" "
-#         f"{infiles} "
-#         f"> {outfile}"
-#     )
-#     return P.run(statement)
-
 @follows(mkdir("multialignment.dir"))
 @transform(
     input=remove_duplicates,
@@ -411,7 +395,22 @@ def extract_barcodes_with_multialignment(infiles, outfile):
 
 
 @merge(
-    input=[summarize_clone_codes_pileup,
+    input=extract_barcodes_with_multialignment,
+    output="barcodes_via_multialignment.tsv"
+)
+def summarize_barcodes_multialignment(infiles, outfile):
+    # filter out empty files as they are not handled by cgat-apps combine_tables.py
+    infiles = [inf for inf in infiles if os.path.getsize(inf) > 0]
+    infiles = " ".join(infiles)
+    statement = (
+        f"cgat combine-tables "
+        f"--log={outfile}.log "
+        f"--cat sample "
+        f"--regex-filename=\".dir/([^/.]+)\" "
+        f"{infiles} "
+        f"> {outfile}"
+    )
+    return P.run(statement)
            summarize_cgat_bamstats,
            summarize_filtering],
     output="summary.tsv"
