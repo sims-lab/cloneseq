@@ -77,6 +77,7 @@ def build_motif_fasta(infile, outfile):
     with IOTools.open_file(outfile, "w") as outf:
         outf.write(">barcode\n{}\n".format(vector_sequence[start:end]))
 
+
 @follows(mkdir("fastq.dir"))
 @collate(
     input=P.PARAMS["input_fastq_glob"],
@@ -206,7 +207,6 @@ def remove_duplicates(infile, outfile):
         f"samtools index {outfile}"
     )
     return P.run(statement, job_memory="unlimited")
-
 
 @follows(mkdir("samtools_bamstats.dir"))
 @transform(
