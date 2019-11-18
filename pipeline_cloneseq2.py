@@ -24,7 +24,15 @@ P.get_parameters('pipeline.yml')
     output="vector.dir/vector.fa"
 )
 def index_vector_sequence(infile, outfile):
-    """Convert vector sequene (viral genome + inserts) to BWA file format."""
+    """Index vector sequence (viral genome + inserts).
+    We want to map reads to the barcode and the surrounding sequence.
+    Having an index allows/speeds up mapping.
+
+    1) samtools faidx:
+       Create an fai index file for samtools.
+    2) bwa index:
+       Create and FM-index for mapping by bwa downstream.
+    """
     statement = (
         f"cp {infile} {outfile} && "
         f"samtools faidx {outfile} && "
@@ -39,7 +47,7 @@ def index_vector_sequence(infile, outfile):
     output=".bed.gz"
 )
 def build_motif_bed(infile, outfile):
-    """Create a BED file with the positions of the variable bases (i.e. 'N') in the barcode."""
+    """Create a BED file that indexes the positions of the variable bases (i.e. 'N') in the barcode."""
     with pysam.FastxFile(infile) as inf:
         vector = next(inf)
 
@@ -57,7 +65,9 @@ def build_motif_bed(infile, outfile):
     output="vector.dir/barcode.fa"
 )
 def build_motif_fasta(infile, outfile):
-    """Extract the barcode sequence."""
+    """Extract the barcode pattern (e.g. NNATGNNCTCNNTAGNN) from the vector reference.
+    The barcode is assumed to begin and terminate with a variable base.
+    """
     with pysam.FastxFile(infile) as inf:
         vector_sequence = next(inf).sequence
 
@@ -77,7 +87,9 @@ def build_motif_fasta(infile, outfile):
             "fastq.dir/{SAMPLE[0]}.unmatched.fastq.2.gz"],
     add_inputs=(index_vector_sequence,))
 def filter_read_data(infiles, outfiles):
-    """Filter reads for occurrence of the barcode motif."""
+    """Filter for reads that map to the vector sequence.
+    This speeds up downstream analysis as most reads are filtered out.
+    """
 
     fastq1, fastq2 = sorted([os.path.abspath(x[0]) for x in infiles])
     vector_fasta = infiles[0][1]
@@ -129,7 +141,7 @@ def summarize_filtering(infiles, outfile):
     add_inputs=(index_vector_sequence,),
 )
 def align_vector_sequences(infiles, outfile):
-    """Align reads containing the barcode."""
+    """Align reads mapped to the vector sequence."""
     fastq_files = sorted([x for x in infiles[0][0] if ".matched" in x])
     vector_fasta = infiles[0][1]
     read_group = P.snip(os.path.basename(fastq_files[0]), ".fastq.1.gz")
@@ -159,6 +171,10 @@ def align_vector_sequences(infiles, outfile):
     output="merged_bam.dir/{SAMPLE[0]}.bam",
 )
 def merge_lanes(infiles, outfile):
+    """A scRNA sample is sometimes sequenced multiple times, i.e. the
+    sample is 'run on another lane'. Here the results for mulitple
+    runs are merged into one file.
+    """
     infiles = " ".join(infiles)
     statement = (
         "samtools merge -f {outfile} {infiles} "
@@ -174,6 +190,10 @@ def merge_lanes(infiles, outfile):
     output="deduplicated.dir/{SAMPLE[0]}.bam",
 )
 def remove_duplicates(infile, outfile):
+    """Duplicate reads are reads originating from a single fragment of
+    DNA. Only the reads with the highest sums of their base quality
+    scores (?) are retained.
+    """
     job_memory = "4G"
     picard_opts = '-Xmx{} -XX:+UseConcMarkSweepGC'.format(job_memory)
     statement = (
@@ -270,7 +290,7 @@ def summarize_cgat_bamstats(infiles, outfile):
     add_inputs=(index_vector_sequence, build_motif_bed),
 )
 def extract_clone_codes_pileup(infiles, outfile):
-    """Determine the exact barcode sequence present in each cell."""
+    """For each sample, build a pileup for the variable bases in the barcode sequence."""
     bamfile, fafile, bedfile = infiles
 
     statement = (
@@ -286,6 +306,9 @@ def extract_clone_codes_pileup(infiles, outfile):
     P.run(statement, job_memory="8G")
 
     full_df = pandas.read_csv(outfile + ".pileup", sep="\t")
+    """Compute a consensus for each variable base in the barcode sequence
+    pileup (as well as various statistics).
+    """
 
     with IOTools.open_file(outfile, "w") as outf:
         headers = full_df.consensus_support.describe().index
