@@ -440,10 +440,10 @@ def summarize_all(infiles, outfile):
                                      columns="category",
                                      values="counts").reset_index()
 
-    # sanitize clone codes df
-    df_clonecodes["barcode"] = df_clonecodes.barcode.fillna("NNNNNNNNN")
-    df_clonecodes["counts_min"] = df_clonecodes.counts_min.fillna(0)
-    df_clonecodes["support_min"] = df_clonecodes.support_min.fillna(0)
+    # # sanitize barcodes df
+    # df_barcodes["barcode"] = df_barcodes.barcode.fillna("NNNNNNNNN")
+    # df_barcodes["counts_min"] = df_barcodes.counts_min.fillna(0)
+    # df_barcodes["support_min"] = df_barcodes.support_min.fillna(0)
 
     # merge
     df_merged = df_clonecodes.merge(df_bamstats, left_on="sample", right_on="sample")\
