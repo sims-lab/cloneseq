@@ -411,8 +411,13 @@ def summarize_barcodes_multialignment(infiles, outfile):
         f"> {outfile}"
     )
     return P.run(statement)
+
+
+@merge(
+    input=[summarize_extract_variable_bases_consensus,
+           summarize_barcodes_multialignment,
            summarize_cgat_bamstats,
-           summarize_filtering],
+           summarize_filter_reads],
     output="summary.tsv"
 )
 def summarize_all(infiles, outfile):
@@ -445,9 +450,11 @@ def summarize_all(infiles, outfile):
     # df_barcodes["counts_min"] = df_barcodes.counts_min.fillna(0)
     # df_barcodes["support_min"] = df_barcodes.support_min.fillna(0)
 
-    # merge
-    df_merged = df_clonecodes.merge(df_bamstats, left_on="sample", right_on="sample")\
-                             .merge(df_filterstats, left_on="sample", right_on="sample")
+    df_merged = df_barcodes\
+        .merge(df_multialignment, how='outer', on='sample', suffixes=('_pileup', '_multialignment'))\
+        .merge(df_bamstats,       how='outer', on="sample")\
+        .merge(df_filterstats,    how='outer', on="sample")
+
     E.info("number of rows bamstats    : {}".format(len(df_bamstats)))
     E.info("number of rows barcodes    : {}".format(len(df_barcodes)))
     E.info("number of rows filterstats : {}".format(len(df_filterstats)))
