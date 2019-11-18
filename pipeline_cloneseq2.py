@@ -96,8 +96,8 @@ def filter_reads(infiles, outfiles):
     outprefix = IOTools.snip(outfiles[0], ".matched.fastq.1.gz")
 
     filter_options = P.get_params().get("kmer_filtering", {})
-    filtering_kmer_size=filter_options.get("kmer_size", 10)
-    filtering_min_kmer_matches=filter_options.get("min_kmer_matches", 10)
+    filtering_kmer_size = filter_options.get("kmer_size", 10)
+    filtering_min_kmer_matches = filter_options.get("min_kmer_matches", 10)
 
     statement = (
         f"cgat fastqs2fastqs "
