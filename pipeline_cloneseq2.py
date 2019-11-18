@@ -282,11 +282,11 @@ def summarize_cgat_bamstats(infiles, outfile):
     return P.run(statement)
 
 
-@follows(mkdir("clone_codes.dir"))
+@follows(mkdir("barcodes.dir"))
 @transform(
     input=remove_duplicates,
-    output=r"clone_codes.dir/\1.tsv",
     filter=regex("^.*/(.+?)\.bam$"),
+    output=r"barcodes.dir/\1.pileup",
     add_inputs=(index_vector_sequence, build_motif_bed),
 )
 def build_variable_bases_pileup(infiles, outfile):
@@ -348,8 +348,8 @@ def extract_variable_bases_consensus(infile, outfile):
                                  eval_df.offconsensus_counts.describe().tolist())) + "\n")
 
 @merge(
-    output="clone_codes_pileup.tsv"
     input=extract_variable_bases_consensus,
+    output="barcodes_via_pileup.tsv"
 )
 def summarize_extract_variable_bases_consensus(infiles, outfile):
     infiles = " ".join(infiles)
