@@ -86,7 +86,7 @@ def build_motif_fasta(infile, outfile):
             "fastq.dir/{SAMPLE[0]}.unmatched.fastq.1.gz",
             "fastq.dir/{SAMPLE[0]}.unmatched.fastq.2.gz"],
     add_inputs=(index_vector_sequence,))
-def filter_read_data(infiles, outfiles):
+def filter_reads(infiles, outfiles):
     """Filter for reads that map to the vector sequence.
     This speeds up downstream analysis as most reads are filtered out.
     """
@@ -116,10 +116,10 @@ def filter_read_data(infiles, outfiles):
 
 
 @merge(
-    input=filter_read_data,
+    input=filter_reads,
     output="filtering_summary.tsv"
 )
-def summarize_filtering(infiles, outfile):
+def summarize_filter_reads(infiles, outfile):
     tables = " ".join([P.snip(x[0], ".matched.fastq.1.gz") + ".log" for x in infiles])
     statement = (
         f"cgat combine-tables "
@@ -134,7 +134,7 @@ def summarize_filtering(infiles, outfile):
 
 @follows(mkdir("mapped.dir"))
 @collate(
-    input=filter_read_data,
+    input=filter_reads,
     filter=formatter(
         r"fastq.dir/(?P<SAMPLE>[^/]+).matched.fastq.[12].gz"),
     output="mapped.dir/{SAMPLE[0]}.bam",
@@ -289,7 +289,7 @@ def summarize_cgat_bamstats(infiles, outfile):
     output=r"clone_codes.dir/\1.tsv",
     add_inputs=(index_vector_sequence, build_motif_bed),
 )
-def extract_clone_codes_pileup(infiles, outfile):
+def build_variable_bases_pileup(infiles, outfile):
     """For each sample, build a pileup for the variable bases in the barcode sequence."""
     bamfile, fafile, bedfile = infiles
 
@@ -306,6 +306,7 @@ def extract_clone_codes_pileup(infiles, outfile):
     P.run(statement, job_memory="8G")
 
     full_df = pandas.read_csv(outfile + ".pileup", sep="\t")
+    input=build_variable_bases_pileup,
     """Compute a consensus for each variable base in the barcode sequence
     pileup (as well as various statistics).
     """
@@ -341,10 +342,10 @@ def extract_clone_codes_pileup(infiles, outfile):
                                  eval_df.offconsensus_counts.describe().tolist())) + "\n")
 
 @merge(
-    input=extract_clone_codes_pileup,
     output="clone_codes_pileup.tsv"
+    input=extract_variable_bases_consensus,
 )
-def summarize_clone_codes_pileup(infiles, outfile):
+def summarize_extract_variable_bases_consensus(infiles, outfile):
     infiles = " ".join(infiles)
     statement = (
         f"cgat combine-tables "
