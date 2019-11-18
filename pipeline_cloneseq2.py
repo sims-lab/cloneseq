@@ -417,10 +417,11 @@ def summarize_barcodes_multialignment(infiles, outfile):
 )
 def summarize_all(infiles, outfile):
     """merge all summary tables into a single table."""
-    fn_clonecodes, fn_bamstats, fn_filtering = infiles
-    df_clonecodes = pandas.read_csv(fn_clonecodes, sep="\t", na_values="na")
-    df_bamstats = pandas.read_csv(fn_bamstats, sep="\t")
-    df_filterstats = pandas.read_csv(fn_filtering, sep="\t")
+    filepath_barcodes, filepath_multialignment, filepath_bamstats, filepath_filtering = infiles
+    df_barcodes       = pandas.read_csv(filepath_barcodes,       sep="\t", na_values="na")
+    df_multialignment = pandas.read_csv(filepath_multialignment, sep="\t", na_values="na")
+    df_bamstats       = pandas.read_csv(filepath_bamstats,       sep="\t")
+    df_filterstats    = pandas.read_csv(filepath_filtering,      sep="\t")
 
     # aggregate the per-lane filter-stats and append to filter stats
     df_filterstats["lane"] = df_filterstats["sample"].str.extract("(lane\d+)", expand=False)
@@ -444,10 +445,10 @@ def summarize_all(infiles, outfile):
     # merge
     df_merged = df_clonecodes.merge(df_bamstats, left_on="sample", right_on="sample")\
                              .merge(df_filterstats, left_on="sample", right_on="sample")
-    E.info("number of rows bamstats: {}".format(len(df_bamstats)))
-    E.info("number of rows clonecodes: {}".format(len(df_clonecodes)))
-    E.info("number of rows filterstats: {}".format(len(df_filterstats)))
-    E.info("number of rows merged: {}".format(len(df_merged)))
+    E.info("number of rows bamstats    : {}".format(len(df_bamstats)))
+    E.info("number of rows barcodes    : {}".format(len(df_barcodes)))
+    E.info("number of rows filterstats : {}".format(len(df_filterstats)))
+    E.info("number of rows merged      : {}".format(len(df_merged)))
     df_merged.to_csv(outfile, sep="\t", index=False)
 
 
