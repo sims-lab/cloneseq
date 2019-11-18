@@ -363,35 +363,6 @@ def summarize_extract_variable_bases_consensus(infiles, outfile):
     )
     return P.run(statement)
 
-# # NB: the multialignment branch seemed dead in Andreas' version of the pipeline.
-# # TODO: summarize_clone_codes_mali does not handle empty TSV files when concatenating tables
-# @follows(mkdir("mali_clone_codes.dir"))
-# @transform(
-#     input=remove_duplicates,
-#     filter=regex(".dir/([^/]+).bam"),
-#     output=r"mali_clone_codes.dir/\1.tsv",
-#     add_inputs=(index_vector_sequence, build_motif_bed, build_motif_fasta),
-# )
-# def extract_clone_codes_mali(infiles, outfile):
-#     """Multi-align regions of the reads containing the barcode (+ an
-#     anchor, as there may be deletions or mutations within the barcode
-#     sequence).
-#     """
-#     bamfile, fafile, bedfile, vectorfile = infiles
-
-#     statement = (
-#         f"cgat bam2fasta "
-#         f"--input-bed-file={bedfile} "
-#         f"--reference-fasta={fafile} "
-#         f"--merge-intervals "
-#         f"--output-filename-pattern={outfile}.%%s "
-#         f"--barcode-fasta={vectorfile} "
-#         f"--log={outfile}.log "
-#         f"{bamfile} "
-#         f"2> {outfile}.err "
-#         f"> {outfile}"
-#     )
-#     P.run(statement)
 
 
 # @merge(
@@ -409,6 +380,34 @@ def summarize_extract_variable_bases_consensus(infiles, outfile):
 #         f"> {outfile}"
 #     )
 #     return P.run(statement)
+
+@follows(mkdir("multialignment.dir"))
+@transform(
+    input=remove_duplicates,
+    filter=regex("^.*/(.+?)\.bam$"),
+    output=r"multialignment.dir/\1.tsv",
+    add_inputs=(index_vector_sequence, build_motif_bed, build_motif_fasta),
+)
+def extract_barcodes_with_multialignment(infiles, outfile):
+    """Multi-align regions of the reads containing the barcode (+ an
+    anchor, as there may be deletions or mutations within the barcode
+    sequence).
+    """
+    bamfile, fafile, bedfile, vectorfile = infiles
+
+    statement = (
+        f"cgat bam2fasta "
+        f"--input-bed-file={bedfile} "
+        f"--reference-fasta={fafile} "
+        f"--merge-intervals "
+        f"--output-filename-pattern={outfile}.%%s "
+        f"--barcode-fasta={vectorfile} "
+        f"--log={outfile}.log "
+        f"{bamfile} "
+        f"2> {outfile}.err "
+        f"> {outfile}"
+    )
+    P.run(statement)
 
 
 @merge(
