@@ -303,13 +303,19 @@ def build_variable_bases_pileup(infiles, outfile):
         f"{bamfile} "
         f"> {outfile}.pileup "
     )
-    P.run(statement, job_memory="8G")
+    return P.run(statement, job_memory="8G")
 
-    full_df = pandas.read_csv(outfile + ".pileup", sep="\t")
+
+@transform(
     input=build_variable_bases_pileup,
+    filter=regex("^.*/(.+?)\.pileup$"),
+    output=r"barcodes.dir/\1.tsv",
+)
+def extract_variable_bases_consensus(infile, outfile):
     """Compute a consensus for each variable base in the barcode sequence
     pileup (as well as various statistics).
     """
+    full_df = pandas.read_csv(infile, sep="\t")
 
     with IOTools.open_file(outfile, "w") as outf:
         headers = full_df.consensus_support.describe().index
