@@ -12,6 +12,23 @@ import textwrap
 import pandas as pd
 
 
+def main(plate_name, path_to_data, path_to_email):
+    project_paths = setup_folders(
+        project='/ifs/projects/proj093/',
+        pipeline='cloneseq',
+        plate=plate_name,
+    )
+
+    # gather and link data sets
+    link_in_data(src_data_dir=pathlib.Path(path_to_data),
+                 dst_data_dir=project_paths['data'],
+                 mapping_info=path_to_email)
+
+    # create pipeline.yml file
+    create_cloneseq_yml(project_paths['plate'])
+
+
+
 def setup_folders(project, pipeline, plate):
     """Creates the following folder structure for RNASeq data analysis:
 
@@ -226,24 +243,12 @@ if __name__ == '__main__':
     # path_to_email = '/ifs/projects/proj093/backup/2019_09_19_plate_18/email_plate_18.txt'
     # path_to_data = '/ifs/projects/proj093/backup/2019_09_19_plate_18/190913_K00181_0175_BHF27LBBXY/'
 
+    # main(plate_name, path_to_data, path_to_email)
+
     data_info = pd.read_csv('/ifs/projects/proj093/analysis/data_info.csv')
     for ii, dataset in data_info.iterrows():
         if dataset['processed'] is not True:
-
             plate_name = dataset['plate_name']
             path_to_data = dataset['path_to_data']
             path_to_email = dataset['path_to_email']
-
-            project_paths = setup_folders(
-                project='/ifs/projects/proj093/',
-                pipeline='cloneseq',
-                plate=plate_name,
-            )
-
-            # gather and link data sets
-            link_in_data(src_data_dir=pathlib.Path(path_to_data),
-                         dst_data_dir=project_paths['data'],
-                         mapping_info=path_to_email)
-
-            # create pipeline.yml file
-            create_cloneseq_yml(project_paths['plate'])
+            main(plate_name, path_to_data, path_to_email)
